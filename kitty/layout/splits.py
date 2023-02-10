@@ -10,7 +10,6 @@ from kitty.window_list import WindowGroup, WindowList
 
 from .base import BorderLine, Layout, LayoutOpts, NeighborsMap, blank_rects_for_window, lgd, window_geometry_from_layouts
 
-
 class Extent(NamedTuple):
     start: int = 0
     end: int = 0

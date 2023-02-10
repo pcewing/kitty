@@ -12,6 +12,8 @@ from kitty.types import Edges, WindowGeometry
 from kitty.typing import TypedDict, WindowType
 from kitty.window_list import WindowGroup, WindowList
 
+from enum import Enum
+from math import sqrt
 
 class BorderLine(NamedTuple):
     edges: Edges = Edges()
@@ -401,3 +403,116 @@ class Layout:
 
     def layout_state(self) -> Dict[str, Any]:
         return {}
+
+    def drag_resize_target_windows(self, x: float, y: float, all_windows: WindowList) -> Tuple[WindowType, WindowType]:
+        class NeighborDirection(Enum):
+            LEFT = 1
+            TOP_LEFT = 2
+            TOP = 3
+            TOP_RIGHT = 4
+            RIGHT = 5
+            BOTTOM_RIGHT = 6
+            BOTTOM = 7
+            BOTTOM_LEFT = 8
+
+        def is_click_in_window(g: WindowGeometry, x: float, y: float) -> bool:
+            return x >= g.left and x <= g.right and y >= g.top and y <= g.bottom
+
+        def is_click_in_left_half(g: WindowGeometry, x: float) -> bool:
+            return g.left <= x and x <= g.left + (float(g.right - g.left) / 2.0)
+
+        def is_click_in_right_half(g: WindowGeometry, x: float) -> bool:
+            return g.left + (float(g.right - g.left) / 2.0) <= x and x <= g.right
+
+        def is_click_in_top_half(g: WindowGeometry, y: float) -> bool:
+            return g.top <= y and y <= g.top + (float(g.bottom - g.top) / 2.0)
+
+        def is_click_in_bottom_half(g: WindowGeometry, y: float) -> bool:
+            return g.top + (float(g.bottom - g.top) / 2.0) <= y and y <= g.bottom
+
+        def get_distance(dx, dy) -> float:
+            return sqrt(dx * dx + dy * dy)
+
+        def get_direction_and_distance_to_window(click_window: WindowType, neighbor_window: WindowType) -> Tuple[NeighborDirection, float]:
+            w1g = click_window.geometry
+            w2g = neighbor_window.geometry
+
+            (direction, distance) = (None, None)
+
+            if w1g.top > w2g.bottom and w1g.left > w2g.right:
+                direction = NeighborDirection.TOP_LEFT
+                distance = get_distance(w1g.left - w2g.right, w1g.top - w2g.bottom)
+            elif w1g.bottom < w2g.top and w1g.left > w2g.right:
+                direction = NeighborDirection.BOTTOM_LEFT
+                distance = get_distance(w1g.left - w2g.right, w2g.top - w1g.bottom)
+            elif w1g.top > w2g.bottom and w1g.right < w2g.left:
+                direction = NeighborDirection.TOP_RIGHT
+                distance = get_distance(w2g.left - w1g.right, w1g.top - w2g.bottom)
+            elif w1g.bottom < w2g.top and w1g.right < w2g.left:
+                direction = NeighborDirection.BOTTOM_RIGHT
+                distance = get_distance(w2g.left - w1g.right, w2g.top - w1g.bottom)
+            else:
+                horizontal_overlap = set(range(w1g.top, w1g.bottom)).intersection(range(w2g.top, w2g.bottom))
+                vertical_overlap = set(range(w1g.left, w1g.right)).intersection(range(w2g.left, w2g.right))
+
+                if w1g.left > w2g.right and len(horizontal_overlap) > 0:
+                    direction = NeighborDirection.LEFT
+                    distance = get_distance(w1g.left - w2g.right, 0.0)
+                elif w1g.right < w2g.left and len(horizontal_overlap) > 0:
+                    direction = NeighborDirection.RIGHT
+                    distance = get_distance(w2g.left - w1g.right, 0.0)
+                elif w1g.top > w2g.bottom and len(vertical_overlap) > 0:
+                    direction = NeighborDirection.TOP
+                    distance = get_distance(0.0, w1g.top - w2g.bottom)
+                elif w1g.bottom < w2g.top and len(vertical_overlap) > 0:
+                    direction = NeighborDirection.BOTTOM
+                    distance = get_distance(0.0, w2g.top - w1g.bottom)
+                else:
+                    raise Exception('Failed to determine direction and distance to neighboring window')
+
+            return (direction, distance)
+
+        # Identify the window where the click occurred
+        click_window = None
+        for w in all_windows.all_windows:
+            if is_click_in_window(w.geometry, x, y):
+                click_window = w
+                break
+
+        if click_window is None:
+            raise Exception("Failed to determine click window")
+
+        # Identify the nearest neighboring window in each direction
+        nearest_neighbors = {}
+        for w in all_windows.all_windows:
+            if w.id == click_window.id:
+                continue
+
+            (direction, distance) = get_direction_and_distance_to_window(click_window, w)
+            if direction not in nearest_neighbors:
+                nearest_neighbors[direction] = (w, distance)
+            elif distance < nearest_neighbors[direction][1]:
+                nearest_neighbors[direction] = (w, distance)
+
+        # Infer which window should be horizontally resized based on click
+        # position and layout state
+        horizontal_target = click_window
+        if is_click_in_left_half(click_window.geometry, x):
+            if NeighborDirection.LEFT in nearest_neighbors:
+                horizontal_target = nearest_neighbors[NeighborDirection.LEFT][0]
+        elif is_click_in_right_half(click_window.geometry, x):
+            if NeighborDirection.LEFT in nearest_neighbors and NeighborDirection.RIGHT not in nearest_neighbors:
+                horizontal_target = nearest_neighbors[NeighborDirection.LEFT][0]
+
+        # Infer which window should be vertically resized based on click
+        # position and layout state
+        vertical_target = click_window
+        if is_click_in_top_half(click_window.geometry, y):
+            if NeighborDirection.TOP in nearest_neighbors:
+                vertical_target = nearest_neighbors[NeighborDirection.TOP][0]
+        elif is_click_in_bottom_half(click_window.geometry, y):
+            if NeighborDirection.TOP in nearest_neighbors and NeighborDirection.BOTTOM not in nearest_neighbors:
+                print("BOTTOM HALF")
+                vertical_target = nearest_neighbors[NeighborDirection.TOP][0]
+
+        return (horizontal_target, vertical_target)
