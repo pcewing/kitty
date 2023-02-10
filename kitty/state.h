@@ -249,7 +249,7 @@ typedef struct {
     bool in_sequence_mode;
     bool check_for_active_animated_images;
     struct { double x, y; } default_dpi;
-    id_type active_drag_in_window, tracked_drag_in_window;
+    id_type active_drag_in_window, tracked_drag_in_window, active_drag_resize;
     int active_drag_button, tracked_drag_button;
     CloseRequest quit_request;
     bool redirect_mouse_handling;
