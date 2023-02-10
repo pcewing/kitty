@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+from math import floor
 from contextlib import contextmanager, suppress
 from functools import partial
 from gettext import gettext as _
@@ -369,6 +370,7 @@ class Boss:
         if is_macos:
             from .fast_data_types import cocoa_set_notification_activated_callback
             cocoa_set_notification_activated_callback(notification_activated)
+        self.drag_resize_active = False
 
     def update_keymap(self) -> None:
         self.keymap = get_options().keymap.copy()
@@ -1912,6 +1914,53 @@ class Boss:
         tab = self.active_tab
         if tab:
             tab.set_active_window(window_id)
+
+
+    def drag_resize_start(self, x: float, y: float, cell_width: int, cell_height: int):
+        tab = self.active_tab
+        if not tab:
+            return
+
+        (horizontal, vertical) = tab.current_layout.drag_resize_target_windows(x, y, tab.windows)
+
+        self.drag_resize_cell_width = cell_width
+        self.drag_resize_cell_height = cell_height
+        self.drag_resize_target_horizontal = horizontal
+        self.drag_resize_target_vertical = vertical
+        self.drag_resize_active = True
+        self.drag_resize_initial_x = x
+        self.drag_resize_initial_y = y
+        self.drag_resize_last_step_x = 0
+        self.drag_resize_last_step_y = 0
+
+    def drag_resize_update(self, x: float, y: float) -> None:
+        if not self.drag_resize_active:
+            return
+
+        if self.drag_resize_target_horizontal is not None:
+            step_x = floor((x - self.drag_resize_initial_x) / self.drag_resize_cell_width)
+            dx = step_x - self.drag_resize_last_step_x
+            if not dx == 0:
+                self.resize_layout_window(self.drag_resize_target_horizontal, float(dx), True, False)
+                self.drag_resize_last_step_x = step_x
+
+        if self.drag_resize_target_vertical is not None:
+            step_y = floor((y - self.drag_resize_initial_y) / self.drag_resize_cell_height)
+            dy = step_y - self.drag_resize_last_step_y
+            if not dy == 0:
+                self.resize_layout_window(self.drag_resize_target_vertical, float(dy), False, False)
+                self.drag_resize_last_step_y = step_y
+
+    def drag_resize_end(self):
+        self.drag_resize_cell_width = 0
+        self.drag_resize_cell_height = 0
+        self.drag_resize_target_horizontal = None
+        self.drag_resize_target_vertical = None
+        self.drag_resize_active = False
+        self.drag_resize_initial_x = 0.0
+        self.drag_resize_initial_y = 0.0
+        self.drag_resize_last_step_x = 0
+        self.drag_resize_last_step_y = 0
 
     def open_kitty_website(self) -> None:
         self.open_url(website_url())
