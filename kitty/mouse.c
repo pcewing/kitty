@@ -646,6 +646,63 @@ closest_window_for_event(unsigned int *window_idx) {
     return ans;
 }
 
+static bool
+is_in_rect(double px, double py, WindowGeometry* geometry) {
+    return geometry != NULL
+        && px >= geometry->left
+        && px <= geometry->right
+        && py >= geometry->top
+        && py <= geometry->bottom;
+}
+
+static bool
+is_on_window_border(void) {
+    OSWindow* osw = global_state.callback_os_window;
+
+    if (osw->num_tabs == 0) {
+        return false;
+    }
+
+    Tab *t = osw->tabs + osw->active_tab;
+
+    // Calculate the extents of all windows
+    WindowGeometry extents = {
+        .left = UINT_MAX,
+        .top = UINT_MAX,
+        .right = 0,
+        .bottom = 0,
+    };
+
+    for (unsigned int i = 0; i < t->num_windows; ++i) {
+        Window *w = t->windows + i;
+
+        if (is_in_rect(osw->mouse_x, osw->mouse_y, &w->geometry))
+            return false;
+
+        extents.left = MIN(extents.left, w->geometry.left);
+        extents.top = MIN(extents.top, w->geometry.top);
+        extents.right = MAX(extents.right, w->geometry.right);
+        extents.bottom = MAX(extents.bottom, w->geometry.bottom);
+    }
+
+    return is_in_rect(osw->mouse_x, osw->mouse_y, &extents);
+}
+
+static void
+border_drag_start(double mouse_x, double mouse_y, unsigned int cell_width, unsigned int cell_height) {
+    call_boss(border_drag_start, "ddII", mouse_x, mouse_y, cell_width, cell_height);
+}
+
+static void
+border_drag_update(double mouse_x, double mouse_y) {
+    call_boss(border_drag_update, "dd", mouse_x, mouse_y);
+}
+
+static void
+border_drag_end(void) {
+    call_boss(border_drag_end, "");
+}
+
 void
 focus_in_event() {
     // Ensure that no URL is highlighted and the mouse cursor is in default shape
@@ -738,6 +795,20 @@ mouse_event(const int button, int modifiers, int action) {
     bool in_tab_bar;
     unsigned int window_idx = 0;
     Window *w = NULL;
+
+    OSWindow* osw = global_state.callback_os_window;
+
+    if (global_state.active_border_drag) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE) {
+            global_state.active_border_drag = false;
+            border_drag_end();
+            return;
+        } else if (button < 0) {
+            border_drag_update(osw->mouse_x, osw->mouse_y);
+            return;
+        }
+    }
+
     if (OPT(debug_keyboard)) {
         if (button < 0) { debug("%s x: %.1f y: %.1f ", "\x1b[36mMove\x1b[m", global_state.callback_os_window->mouse_x, global_state.callback_os_window->mouse_y); }
         else { debug("%s mouse_button: %d %s", action == GLFW_RELEASE ? "\x1b[32mRelease\x1b[m" : "\x1b[31mPress\x1b[m", button, format_mods(modifiers)); }
@@ -808,6 +879,17 @@ mouse_event(const int button, int modifiers, int action) {
         }
     }
     w = window_for_event(&window_idx, &in_tab_bar);
+
+    if (w == NULL) {
+        if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+            if (is_on_window_border()) {
+                border_drag_start(osw->mouse_x, osw->mouse_y, osw->fonts_data->cell_width, osw->fonts_data->cell_height);
+                global_state.active_border_drag = true;
+                return;
+            }
+        }
+    }
+
     if (in_tab_bar) {
         mouse_cursor_shape = HAND;
         handle_tab_bar_mouse(button, modifiers, action);

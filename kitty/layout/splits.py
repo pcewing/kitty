@@ -10,6 +10,18 @@ from kitty.window_list import WindowGroup, WindowList
 
 from .base import BorderLine, Layout, LayoutOpts, NeighborsMap, blank_rects_for_window, lgd, window_geometry_from_layouts
 
+from enum import Enum
+
+class NeighborDirection(Enum):
+    LEFT = 1
+    TOP_LEFT = 2
+    TOP = 3
+    TOP_RIGHT = 4
+    RIGHT = 5
+    BOTTOM_RIGHT = 6
+    BOTTOM = 7
+    BOTTOM_LEFT = 8
+
 
 class Extent(NamedTuple):
     start: int = 0
@@ -585,3 +597,106 @@ class Splits(Layout):
             return ans
 
         return {'pairs': add_pair(self.pairs_root)}
+
+    # TODO: Add return typing
+    def window_resize_targets(self, x: float, y: float, border_width: int, border_height: int, all_windows: WindowList):
+        def geometry_contains(x: float, y: float, g: WindowGeometry):
+            return x >= g.left and x <= g.right and y >= g.top and y <= g.bottom
+
+        def get_direction_to_window(x: float, y: float, g: WindowGeometry):
+            if g.right < x and g.top <= y <= g.bottom:
+                return NeighborDirection.LEFT
+            elif g.right < x and g.bottom < y:
+                return NeighborDirection.TOP_LEFT
+            elif g.left <= x <= g.right and g.bottom < y:
+                return NeighborDirection.TOP
+            elif x < g.left and g.bottom < y:
+                return NeighborDirection.TOP_RIGHT
+            elif x < g.left and g.top <= y <= g.bottom:
+                return NeighborDirection.RIGHT
+            elif x < g.left and y < g.top:
+                return NeighborDirection.BOTTOM_RIGHT
+            elif g.left <= x <= g.right and y < g.top:
+                return NeighborDirection.BOTTOM
+            elif g.right < x and y < g.top:
+                return NeighborDirection.BOTTOM_LEFT
+            else:
+                return None
+
+        def neighbor_directions(neighbors, directions):
+            for direction in directions:
+                if direction not in neighbors:
+                    return False
+            return True
+
+        neighbors = {}
+
+        for w in all_windows.all_windows:
+            if geometry_contains(x, y, w.geometry):
+                # This shouldn't theoretically be possible because this is
+                # already checked in mouse.c:is_on_window_border() but check
+                # anyways in case someone calls this from elsewhere. If the
+                # click lies within the bounds of a window, it wasn't on a
+                # border at all.
+                break
+
+            # TODO: Clamp values to avoid going out of min/max window extents
+            expanded = WindowGeometry(
+                left=w.geometry.left - border_width,
+                top=w.geometry.top - border_height,
+                right=w.geometry.right + border_width,
+                bottom=w.geometry.bottom + border_height,
+                xnum=0,
+                ynum=0,
+            )
+
+            if geometry_contains(x, y, expanded):
+                direction = get_direction_to_window(x, y, w.geometry)
+                if direction is not None:
+                    neighbors[direction] = w
+
+        horizontal_target = None
+        vertical_target = None
+
+        ## Four-way cases
+        #
+        #     X|X
+        #     -o-
+        #     X|X
+        #
+        if neighbor_directions(neighbors, [NeighborDirection.TOP_LEFT, NeighborDirection.TOP_RIGHT, NeighborDirection.BOTTOM_LEFT, NeighborDirection.BOTTOM_RIGHT]):
+            horizontal_target = neighbors[NeighborDirection.TOP_LEFT]
+            vertical_target = neighbors[NeighborDirection.TOP_LEFT]
+        #
+        # Three-way cases
+        #
+        #     XXX    X|X    X|X    X|X
+        #     -o-    -o-    Xo-    -oX
+        #     X|X    XXX    X|X    X|X
+        #
+        elif neighbor_directions(neighbors, [NeighborDirection.TOP, NeighborDirection.BOTTOM_LEFT, NeighborDirection.BOTTOM_RIGHT]):
+            horizontal_target = neighbors[NeighborDirection.BOTTOM_LEFT]
+            vertical_target = neighbors[NeighborDirection.TOP]
+        elif neighbor_directions(neighbors, [NeighborDirection.BOTTOM, NeighborDirection.TOP_LEFT, NeighborDirection.TOP_RIGHT]):
+            horizontal_target = neighbors[NeighborDirection.TOP_LEFT]
+            vertical_target = neighbors[NeighborDirection.TOP_LEFT]
+        elif neighbor_directions(neighbors, [NeighborDirection.LEFT, NeighborDirection.TOP_RIGHT, NeighborDirection.BOTTOM_RIGHT]):
+            horizontal_target = neighbors[NeighborDirection.LEFT]
+            vertical_target = neighbors[NeighborDirection.TOP_RIGHT]
+        elif neighbor_directions(neighbors, [NeighborDirection.RIGHT, NeighborDirection.TOP_LEFT, NeighborDirection.BOTTOM_LEFT]):
+            horizontal_target = neighbors[NeighborDirection.TOP_LEFT]
+            vertical_target = neighbors[NeighborDirection.TOP_LEFT]
+        #
+        # Two-way cases:
+        #
+        #     XXX    X|X
+        #     -o-    XoX
+        #     XXX    X|X
+        #
+        elif neighbor_directions(neighbors, [NeighborDirection.TOP, NeighborDirection.BOTTOM]):
+            vertical_target = neighbors[NeighborDirection.TOP]
+        elif neighbor_directions(neighbors, [NeighborDirection.LEFT, NeighborDirection.RIGHT]):
+            horizontal_target = neighbors[NeighborDirection.LEFT]
+
+        # Select targets to return
+        return (horizontal_target, vertical_target)

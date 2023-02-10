@@ -369,6 +369,7 @@ class Boss:
         if is_macos:
             from .fast_data_types import cocoa_set_notification_activated_callback
             cocoa_set_notification_activated_callback(notification_activated)
+        self.border_drag_active = False
 
     def update_keymap(self) -> None:
         self.keymap = get_options().keymap.copy()
@@ -1887,6 +1888,70 @@ class Boss:
         tab = self.active_tab
         if tab:
             tab.set_active_window(window_id)
+
+    def border_drag_start(self, x: float, y: float, cell_width: int, cell_height: int):
+        print('kitty/boss.py:Boss.border_drag_start(x = {}, y = {})'.format(x, y))
+
+        tab = self.active_tab
+        if not tab:
+            return
+
+        (horizontal, vertical) = tab.current_layout.window_resize_targets(x, y, cell_width, cell_height, tab.windows)
+        if horizontal is None and vertical is None:
+            print('Failed to identify border drag target windows')
+            return
+
+        self.border_drag_cell_width = cell_width
+        self.border_drag_cell_height = cell_height
+        self.border_drag_last_step_x = x
+        self.border_drag_last_step_y = y
+        self.border_drag_target_horizontal = horizontal
+        self.border_drag_target_vertical = vertical
+        self.border_drag_active = True
+
+    def border_drag_update(self, x: float, y: float) -> None:
+        print('kitty/boss.py:Boss.border_drag_update(x = {}, y = {})'.format(x, y))
+
+        if not self.border_drag_active:
+            return
+
+        # TODO: We can probably calculate dx/dy more accurately but this is
+        # fine as a PoC. Basically, whenever the mouse has been dragged more
+        # than the cell width/height since the most recent resize, resize by 1
+        # cell. This probably isn't perfect, for instance if the mouse were
+        # moved so fast that it moved more then 2 times the cell width in a
+        # single frame.
+
+        dx = 0
+        if x < (self.border_drag_last_step_x - self.border_drag_cell_width):
+            dx = -1
+        elif x > (self.border_drag_last_step_x + self.border_drag_cell_width):
+            dx = 1
+
+        dy = 0;
+        if y < (self.border_drag_last_step_y - self.border_drag_cell_height):
+            dy = -1
+        elif y > (self.border_drag_last_step_y + self.border_drag_cell_height):
+            dy = 1
+
+        if self.border_drag_target_horizontal is not None and not dx == 0:
+            self.resize_layout_window(self.border_drag_target_horizontal, float(dx), True, False)
+            self.border_drag_last_step_x = x
+
+        if self.border_drag_target_vertical is not None and not dy == 0:
+            self.resize_layout_window(self.border_drag_target_vertical, float(dy), False, False)
+            self.border_drag_last_step_y = y
+
+    def border_drag_end(self):
+        print('kitty/boss.py:Boss.border_drag_end()')
+
+        self.border_drag_cell_width = 0
+        self.border_drag_cell_height = 0
+        self.border_drag_last_step_x = 0.0
+        self.border_drag_last_step_y = 0.0
+        self.border_drag_target_horizontal = None
+        self.border_drag_target_vertical = None
+        self.border_drag_active = False
 
     def open_kitty_website(self) -> None:
         self.open_url(website_url())
