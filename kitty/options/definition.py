@@ -3534,6 +3534,11 @@ map('Start resizing window',
     only='macos',
     )
 
+#mma('Start resizing window with mouse',
+    #'start_resizing_window_with_mouse left click ungrabbed mouse_handle_click selection link prompt',
+    #long_text='TODO'
+    #)
+
 map('First window',
     'first_window kitty_mod+1 first_window',
     )

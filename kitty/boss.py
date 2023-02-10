@@ -1416,6 +1416,24 @@ class Boss:
         if overlay_window is not None:
             overlay_window.allow_remote_control = True
 
+    @ac('win', '''
+        TODO
+        ''')
+    def start_resizing_window_with_mouse(self) -> None:
+        w = self.active_window
+        if w is None:
+            return
+        # TODO: Can we pass in which mouse button is mapped so we don't have to
+        # hard-code MouseButton.RIGHT+MouseEvent.RELEASE as the terminating
+        # condition in the kitten
+        overlay_window = self.run_kitten_with_metadata('mouse_resize', args=[
+            f'--horizontal-increment=1',
+            f'--vertical-increment=1',
+        ])
+        if overlay_window is not None:
+            overlay_window.allow_remote_control = True
+
+
     def resize_layout_window(self, window: Window, increment: float, is_horizontal: bool, reset: bool = False) -> Union[bool, None, str]:
         tab = window.tabref()
         if tab is None or not increment:
