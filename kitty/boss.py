@@ -1915,7 +1915,7 @@ class Boss:
         if tab:
             tab.set_active_window(window_id)
 
-    def drag_resize_start(self, x: float, y: float, cell_width: int, cell_height: int):
+    def drag_resize_start(self, x: float, y: float, cell_width: int, cell_height: int) -> None:
         tab = self.active_tab
         if not tab:
             return
@@ -1950,7 +1950,7 @@ class Boss:
                 self.resize_layout_window(self.drag_resize_target_vertical, float(dy), False, False)
                 self.drag_resize_last_step_y = step_y
 
-    def drag_resize_end(self):
+    def drag_resize_end(self) -> None:
         self.drag_resize_cell_width = 0
         self.drag_resize_cell_height = 0
         self.drag_resize_target_horizontal = None
